@@ -1,0 +1,15 @@
+{
+  "endpoint": "https://api.otpusk.com/api/2.6/tours/getResults",
+  "agencyId": "1",
+  "domainId": "870",
+  "authKey": "29ae6-32ef8-d106b-7ea88-5f40d",
+  "currency": "eur",
+  "hotToursSettings": {
+    "minPrice": 0,
+    "maxPrice": 0,
+    "priorityCountries": [],
+    "instantConfirmOnly": false,
+    "departureDaysFrom": 1,
+    "departureDaysTo": 14
+  }
+}

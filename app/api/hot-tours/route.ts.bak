@@ -1,0 +1,102 @@
+import { NextResponse } from "next/server";
+import {
+  loadApiConfig,
+  buildTatQueryString,
+  extractTours,
+  normalizeTatTour,
+  TatApiResponse,
+  TourSearchParams,
+} from "@/lib/tat-api";
+
+// Cache hot tours for 1 hour
+export const revalidate = 3600;
+
+export async function GET() {
+  const config = loadApiConfig();
+
+  // If API not configured — return empty with flag
+  if (!config.agencyId && !config.domainId) {
+    return NextResponse.json({
+      tours: [],
+      configured: false,
+      source: "unconfigured",
+    });
+  }
+
+  const settings = config.hotToursSettings;
+
+  // Build date range: departure in next N days
+  const today = new Date();
+  const dateFrom = formatDate(today);
+  const dateTo = formatDate(
+    addDays(today, settings.departureDaysTo ?? 14)
+  );
+
+  const params: TourSearchParams = {
+    dateFrom,
+    dateTo,
+    sort: "price_asc",
+    limit: 8,
+    adults: 2,
+    children: 0,
+    instant: settings.instantConfirmOnly || undefined,
+    priceFrom: settings.minPrice > 0 ? settings.minPrice : undefined,
+    priceTo: settings.maxPrice > 0 ? settings.maxPrice : undefined,
+  };
+
+  // Apply first priority country if set
+  if (settings.priorityCountries?.length > 0) {
+    params.country = settings.priorityCountries[0];
+  }
+
+  const qs = buildTatQueryString(config, params);
+  const url = `${config.endpoint}?${qs}`;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "Monotours24/1.0",
+      },
+      next: { revalidate: 3600 },
+    });
+
+    if (!res.ok) {
+      return NextResponse.json({
+        tours: [],
+        configured: true,
+        error: `API ${res.status}`,
+        source: "crm-tat",
+      });
+    }
+
+    const data = (await res.json()) as TatApiResponse;
+    const rawTours = extractTours(data);
+    const tours = rawTours.slice(0, 8).map((t, i) => normalizeTatTour(t, i));
+
+    return NextResponse.json({
+      tours,
+      configured: true,
+      total: tours.length,
+      source: "crm-tat",
+      cachedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    return NextResponse.json({
+      tours: [],
+      configured: true,
+      error: err instanceof Error ? err.message : String(err),
+      source: "crm-tat",
+    });
+  }
+}
+
+function formatDate(d: Date): string {
+  return d.toISOString().split("T")[0];
+}
+
+function addDays(d: Date, days: number): Date {
+  const r = new Date(d);
+  r.setDate(r.getDate() + days);
+  return r;
+}

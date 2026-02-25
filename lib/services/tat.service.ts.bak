@@ -1,0 +1,152 @@
+// ─── TAT CRM TourScanner service ─────────────────────────────────────────────
+// All external requests to crm.tat.ua go through here.
+// Frontend must NEVER call crm.tat.ua directly.
+
+interface TestConnectionParams {
+  endpoint: string;
+  agencyId: string;
+  domainId: string;
+  authKey: string;
+  currency?: string;
+}
+
+export interface TatTestResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+  details?: string;
+  url?: string;
+  httpStatus?: number;
+  responseSnippet?: string;
+  durationMs?: number;
+}
+
+// Last request info for /debug endpoint
+const debugState = {
+  lastUrl: "",
+  lastStatus: 0,
+  lastError: "",
+  lastTestedAt: "",
+};
+
+export function buildTourscannerUrl(params: TestConnectionParams): string {
+  const qp = new URLSearchParams();
+  if (params.agencyId) qp.set("a", params.agencyId);
+  if (params.domainId) qp.set("d", params.domainId);
+  if (params.authKey)  qp.set("ca", params.authKey);
+  qp.set("cu", params.currency || "uah");
+  qp.set("fl", "yes");
+  qp.set("ho", "yes");
+  qp.set("fmt", "json");
+  qp.set("lm", "1");
+  return `${params.endpoint.replace(/\/$/, "")}?${qp.toString()}`;
+}
+
+export function validateTatResponse(
+  status: number,
+  body: string
+): { ok: boolean; reason?: string } {
+  if (status === 401) return { ok: false, reason: "Неверный токен авторизации (401 Unauthorized)" };
+  if (status === 403) return { ok: false, reason: "Доступ запрещён (403 Forbidden) — проверьте Agency ID / Domain ID" };
+  if (status === 404) return { ok: false, reason: "Эндпоинт не найден (404) — проверьте URL" };
+  if (status >= 500)  return { ok: false, reason: `Ошибка сервера TAT (${status})` };
+  if (status !== 200) return { ok: false, reason: `Неожиданный HTTP статус: ${status}` };
+
+  const lower = body.toLowerCase();
+  if (lower.includes("access denied"))  return { ok: false, reason: "Ответ содержит 'Access denied'" };
+  if (lower.includes("invalid token"))  return { ok: false, reason: "Ответ содержит 'Invalid token'" };
+  if (lower.includes("unauthorized"))   return { ok: false, reason: "Ответ содержит 'Unauthorized'" };
+
+  return { ok: true };
+}
+
+export async function testConnection(
+  params: TestConnectionParams
+): Promise<TatTestResult> {
+  const url = buildTourscannerUrl(params);
+  debugState.lastUrl = url;
+  debugState.lastTestedAt = new Date().toISOString();
+
+  console.log("[TAT] Testing connection...");
+  console.log("[TAT] Request URL:", url.replace(/ca=[^&]+/, "ca=***"));
+
+  const start = Date.now();
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Monotours24/1.0",
+        Accept: "application/json, text/html, */*",
+      },
+      redirect: "follow",
+      signal: controller.signal,
+    });
+
+    clearTimeout(timer);
+    const durationMs = Date.now() - start;
+    debugState.lastStatus = res.status;
+    debugState.lastError = "";
+
+    const body = await res.text();
+    const snippet = body.slice(0, 500);
+
+    console.log(`[TAT] Response: HTTP ${res.status} in ${durationMs}ms`);
+
+    const validation = validateTatResponse(res.status, body);
+    if (!validation.ok) {
+      debugState.lastError = validation.reason ?? "Validation failed";
+      return {
+        success: false,
+        error: "Connection failed",
+        details: validation.reason,
+        url: url.replace(/ca=[^&]+/, "ca=***"),
+        httpStatus: res.status,
+        responseSnippet: snippet,
+        durationMs,
+      };
+    }
+
+    return {
+      success: true,
+      message: "TAT API connected",
+      url: url.replace(/ca=[^&]+/, "ca=***"),
+      httpStatus: res.status,
+      responseSnippet: snippet,
+      durationMs,
+    };
+  } catch (err) {
+    const durationMs = Date.now() - start;
+    let details = err instanceof Error ? err.message : String(err);
+
+    if (details.includes("fetch failed") || details.includes("ECONNREFUSED")) {
+      details = `Сетевая ошибка / соединение отклонено: ${details}`;
+    } else if (details.includes("ENOTFOUND") || details.includes("getaddrinfo")) {
+      details = `DNS не разрешён — хост недоступен: ${details}`;
+    } else if (details.includes("aborted") || details.includes("AbortError")) {
+      details = "Таймаут 15 сек — сервер не ответил";
+    } else if (details.includes("ETIMEDOUT")) {
+      details = `Таймаут соединения: ${details}`;
+    }
+
+    console.error("[TAT] Connection error:", details);
+    debugState.lastError = details;
+    debugState.lastStatus = 0;
+
+    return {
+      success: false,
+      error: "Connection failed",
+      details,
+      url: url.replace(/ca=[^&]+/, "ca=***"),
+      httpStatus: 0,
+      durationMs,
+    };
+  }
+}
+
+export function getDebugState() {
+  return { ...debugState };
+}

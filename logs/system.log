@@ -1,0 +1,47 @@
+=== SYSTEM DIAGNOSTIC LOG ===
+Timestamp: 2026-02-24T01:27:47Z
+Host: vmd190753
+Platform: Linux
+
+--- STEP 1: ENVIRONMENT ---
+Node version: v22.22.0
+npm version: 10.9.4
+npm install: 367 packages audited, 8 high severity vulnerabilities noted
+
+--- STEP 2: PERMISSIONS ---
+/root/travel-agency/data: chmod 775 — OK
+/root/travel-agency/logs: chmod 775 — OK
+Write test: WRITE OK
+api-config.json: present (311 bytes)
+
+--- STEP 3: CONFIG SAVE TEST ---
+Write: OK
+Read: OK
+Validation: PASSED
+STATUS: CONFIG WRITE OK
+
+--- STEP 4: API CONNECTION TEST ---
+Config: api-config.json loaded; agencyId and domainId are empty
+Target URL: https://crm.tat.ua/tf/tourscanner?fmt=json&lm=1
+HTTP Status: 200
+STATUS: API OK
+
+--- STEP 5: NETWORK DIAGNOSTICS ---
+curl crm.tat.ua: HTTP 200 in 0.152271s
+DNS: crm.tat.ua -> 65.109.120.14 (via 127.0.0.53)
+
+--- STEP 6: BACKEND ROUTES ---
+app/api/tours/route.ts:           3029 bytes — OK
+app/api/hot-tours/route.ts:       2457 bytes — OK
+app/api/admin/save-config/route.ts: 2079 bytes — OK (GET + POST)
+lib/tat-api.ts:                  10093 bytes — OK
+
+--- STEP 7: LOGGING ---
+Log file created at: /root/travel-agency/logs/system.log
+
+--- STEP 8: BUILD ---
+Result: SUCCESS
+Next.js 16.1.6 (Turbopack), compiled in 6.9s
+TypeScript: passed
+11 static pages generated
+All API routes registered

@@ -1,0 +1,13 @@
+{
+  "testKey": "hello-world",
+  "number": 42,
+  "nested": {
+    "valid": true,
+    "timestamp": 1771896356612
+  },
+  "array": [
+    1,
+    2,
+    3
+  ]
+}

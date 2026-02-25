@@ -1,0 +1,97 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+  loadApiConfig,
+  buildTatQueryString,
+  extractTours,
+  normalizeTatTour,
+  TourSearchParams,
+  TatApiResponse,
+} from "@/lib/tat-api";
+
+export const dynamic = "force-dynamic";
+
+export async function GET(req: NextRequest) {
+  const config = loadApiConfig();
+
+  // Require agency ID to be configured
+  if (!config.agencyId && !config.domainId) {
+    return NextResponse.json(
+      {
+        error: "API не настроено в админке",
+        hint: "Перейдите в /admin/settings и заполните Agency ID и Domain ID",
+        tours: [],
+      },
+      { status: 503 }
+    );
+  }
+
+  // Parse search params from request
+  const sp = req.nextUrl.searchParams;
+
+  const params: TourSearchParams = {
+    country: sp.get("country") ?? undefined,
+    resort: sp.get("resort") ?? undefined,
+    hotel: sp.get("hotel") ?? undefined,
+    dateFrom: sp.get("dateFrom") ?? undefined,
+    dateTo: sp.get("dateTo") ?? undefined,
+    nightsFrom: sp.get("nightsFrom") ? Number(sp.get("nightsFrom")) : undefined,
+    nightsTo: sp.get("nightsTo") ? Number(sp.get("nightsTo")) : undefined,
+    priceFrom: sp.get("priceFrom") ? Number(sp.get("priceFrom")) : undefined,
+    priceTo: sp.get("priceTo") ? Number(sp.get("priceTo")) : undefined,
+    adults: sp.get("adults") ? Number(sp.get("adults")) : 2,
+    children: sp.get("children") ? Number(sp.get("children")) : 0,
+    departureCity: sp.get("departureCity") ?? undefined,
+    stars: sp.get("stars") ?? undefined,
+    meal: sp.get("meal") ?? undefined,
+    transport: sp.get("transport") ?? undefined,
+    instant: sp.get("instant") === "true" ? true : undefined,
+    sort: (sp.get("sort") as TourSearchParams["sort"]) ?? "price_asc",
+    page: sp.get("page") ? Number(sp.get("page")) : 1,
+    limit: sp.get("limit") ? Number(sp.get("limit")) : 20,
+  };
+
+  const qs = buildTatQueryString(config, params);
+  const url = `${config.endpoint}?${qs}`;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "Monotours24/1.0",
+      },
+      // Do NOT cache individual filtered requests
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      return NextResponse.json(
+        {
+          error: `CRM TAT API вернул ${res.status}`,
+          detail: body.slice(0, 300),
+          tours: [],
+        },
+        { status: res.status }
+      );
+    }
+
+    const data = (await res.json()) as TatApiResponse;
+    const rawTours = extractTours(data);
+    const tours = rawTours.map((t, i) => normalizeTatTour(t, i));
+
+    return NextResponse.json({
+      tours,
+      total: data.total ?? data.count ?? tours.length,
+      source: "crm-tat",
+    });
+  } catch (err) {
+    return NextResponse.json(
+      {
+        error: "Ошибка соединения с CRM TAT API",
+        detail: err instanceof Error ? err.message : String(err),
+        tours: [],
+      },
+      { status: 502 }
+    );
+  }
+}
